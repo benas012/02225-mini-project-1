@@ -76,7 +76,10 @@ def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: r
 
         completion_time = current_time + running_job.remaining
         nearest_release = min(next_release.values())
-        next_event_time = completion_time if (nearest_release >= horizon or not drain_after_horizon) else min(completion_time, nearest_release)
+        if drain_after_horizon:
+            next_event_time = completion_time if nearest_release >= horizon else min(completion_time, nearest_release)
+        else:
+            next_event_time = min(completion_time, nearest_release, horizon)
         running_job.remaining -= next_event_time - current_time
         current_time = next_event_time
 
@@ -89,6 +92,9 @@ def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: r
             max_response[running_job.task.id] = max(max_response[running_job.task.id], finish_time - running_job.release)
             ready.remove(running_job)
             running_job = None
+
+        if current_time >= horizon and not drain_after_horizon:
+            break
 
         if current_time >= horizon and all(nr >= horizon for nr in next_release.values()) and not ready:
             break
