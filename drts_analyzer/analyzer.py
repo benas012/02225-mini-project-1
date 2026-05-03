@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from .dm_analysis import dm_wcrts
-from .edf_analysis import edf_wcrts
+from .edf_analysis import edf_analyze
 from .models import TaskSet
 from .simulator import run_simulation
 from .utils import lcm, load_csv_task_set, parse_taskset_metadata
@@ -56,9 +56,10 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
             dm_sched = all(dm[t.id] <= t.D for t in tasks)
             dm_status = "ok"
             if hyperperiod <= max_hyperperiod:
-                edf = edf_wcrts(tasks)
+                edf_res = edf_analyze(tasks)
+                edf = edf_res["wcrt"]
                 edf_status = "ok"
-                edf_sched = all(edf[t.id] <= t.D for t in tasks)
+                edf_sched = edf_res["schedulable"]
             else:
                 edf = {}
                 edf_status = "skipped_hyperperiod_too_large"
@@ -67,9 +68,13 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
             dm_misses = edf_misses = 0
             simulation_status = "simulation_disabled" if runs == 0 else "ok"
             if runs > 0:
+                incomplete=False
                 for run in range(runs):
-                    dm_misses += run_simulation(tasks, "DM", effective_horizon, random.Random(seed + run)).deadline_misses
-                    edf_misses += run_simulation(tasks, "EDF", effective_horizon, random.Random(seed + run)).deadline_misses
+                    dm_stats = run_simulation(tasks, "DM", effective_horizon, random.Random(seed + run), execution_policy="random")
+                    edf_stats = run_simulation(tasks, "EDF", effective_horizon, random.Random(seed + run), execution_policy="random")
+                    dm_misses += dm_stats.deadline_misses
+                    edf_misses += edf_stats.deadline_misses
+                    incomplete = incomplete or dm_stats.incomplete_jobs_ignored > 0 or edf_stats.incomplete_jobs_ignored > 0
             warnings = []
             if dm_sched and edf_sched is False:
                 warnings.append("edf_worse_than_dm_check_failed")
@@ -77,6 +82,10 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
                 warnings.append("dm_sim_miss_despite_analytical_schedulable")
             if edf_sched is True and edf_misses > 0:
                 warnings.append("edf_sim_miss_despite_analytical_schedulable")
+            if hyperperiod > max_hyperperiod:
+                warnings.append("hyperperiod_too_large_edf_skipped")
+            if runs>0 and incomplete:
+                warnings.append("simulation_incomplete_jobs_ignored")
             summary_rows.append({**common, "taskset_name": task_set.name, "actual_utilization": task_set.utilization, "hyperperiod": hyperperiod, "number_of_tasks": len(tasks), "dm_schedulable": dm_sched, "edf_schedulable": edf_sched, "dm_deadline_misses_sim": dm_misses, "edf_deadline_misses_sim": edf_misses, "dm_status": dm_status, "edf_status": edf_status, "simulation_status": simulation_status, "status": "ok", "simulation_horizon_used": effective_horizon, "warnings": ";".join(warnings)})
         except Exception as exc:  # noqa: BLE001
             summary_rows.append({**common, "actual_utilization": "", "hyperperiod": "", "number_of_tasks": "", "dm_schedulable": "", "edf_schedulable": "", "dm_deadline_misses_sim": "", "edf_deadline_misses_sim": "", "dm_status": "failed_validation", "edf_status": "failed_validation", "simulation_status": "failed_validation", "status": "failed_validation", "simulation_horizon_used": "", "error_message": str(exc)})
