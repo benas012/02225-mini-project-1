@@ -134,3 +134,41 @@ requirements.txt
 - Do not use stochastic simulation as a proof of schedulability.
 - Do not ignore preemptions.
 - Do not compare response time to period when `D < T`; compare to `D`.
+
+## Using the course-provided CSV task sets
+
+The `tasksets/` folder is intentionally not committed to GitHub because it can be large. Download and unzip the provided task sets locally, then place them at:
+
+- `tasksets/`
+
+Run batch CSV analysis with:
+
+```bash
+python -m drts_analyzer analyze-csv-folder --input tasksets --output results --runs 100 --seed 42
+```
+
+Results will be written to:
+
+- `results/taskset_summary.csv`
+- `results/task_details.csv`
+
+### CSV columns
+
+- `TaskID`: task identifier
+- `Jitter`: release jitter; must be `0` for this implementation
+- `BCET`: best-case execution time
+- `WCET`: worst-case execution time
+- `Period`: task period
+- `Deadline`: relative deadline
+- `PE`: processing element/core; must be `0` for this single-core project
+
+### Folder naming convention
+
+- `automotive-utilDist`: automotive-like generated task sets
+- `unifast-utilDist`: task sets generated using utilization distribution
+- `uniform-discrete-perDist`: task sets with uniformly/discretely generated periods
+- `1-core`: single-core task sets
+- `25-task`: number of tasks
+- `0-jitter`: no release jitter
+- `0.60-util`: intended utilization group
+- final CSV index such as `_0`, `_1`, `_2`: different randomly generated instances in the same group
