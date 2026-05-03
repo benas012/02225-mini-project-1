@@ -35,6 +35,16 @@ def test_validation_rules(tmp_path: Path):
             pass
 
 
+def test_missing_columns_rejected(tmp_path: Path):
+    csv_file = tmp_path / "m.csv"
+    _write_csv(csv_file, ["TaskID,BCET,WCET,Period,Deadline,PE", "t1,0,1,10,10,0"])
+    try:
+        load_csv_task_set(csv_file, tmp_path)
+        assert False
+    except ValueError as exc:
+        assert "Missing required columns" in str(exc)
+
+
 def test_parse_metadata_from_path(tmp_path: Path):
     csv_file = tmp_path / "tasksets/uniform-discrete-perDist/1-core/25-task/0-jitter/0.60-util/uniform-discrete_0.csv"
     _write_csv(csv_file, ["TaskID,Jitter,BCET,WCET,Period,Deadline,PE", "t1,0,1,1,5,5,0"])

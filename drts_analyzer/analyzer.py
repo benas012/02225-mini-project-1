@@ -66,6 +66,10 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
                 edf_sched = ""
             effective_horizon = simulation_horizon if simulation_horizon is not None else min(hyperperiod, max_hyperperiod)
             dm_misses = edf_misses = 0
+            dm_max_sim_response_time = 0.0
+            edf_max_sim_response_time = 0.0
+            dm_preemptions = 0
+            edf_preemptions = 0
             simulation_status = "simulation_disabled" if runs == 0 else "ok"
             if runs > 0:
                 incomplete=False
@@ -74,6 +78,10 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
                     edf_stats = run_simulation(tasks, "EDF", effective_horizon, random.Random(seed + run), execution_policy="random")
                     dm_misses += dm_stats.deadline_misses
                     edf_misses += edf_stats.deadline_misses
+                    dm_max_sim_response_time = max(dm_max_sim_response_time, max(dm_stats.max_response.values(), default=0.0))
+                    edf_max_sim_response_time = max(edf_max_sim_response_time, max(edf_stats.max_response.values(), default=0.0))
+                    dm_preemptions += dm_stats.preemptions
+                    edf_preemptions += edf_stats.preemptions
                     incomplete = incomplete or dm_stats.incomplete_jobs_ignored > 0 or edf_stats.incomplete_jobs_ignored > 0
             warnings = []
             if dm_sched and edf_sched is False:
@@ -86,9 +94,9 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
                 warnings.append("hyperperiod_too_large_edf_skipped")
             if runs>0 and incomplete:
                 warnings.append("simulation_incomplete_jobs_ignored")
-            summary_rows.append({**common, "taskset_name": task_set.name, "actual_utilization": task_set.utilization, "hyperperiod": hyperperiod, "number_of_tasks": len(tasks), "dm_schedulable": dm_sched, "edf_schedulable": edf_sched, "dm_deadline_misses_sim": dm_misses, "edf_deadline_misses_sim": edf_misses, "dm_status": dm_status, "edf_status": edf_status, "simulation_status": simulation_status, "status": "ok", "simulation_horizon_used": effective_horizon, "warnings": ";".join(warnings)})
+            summary_rows.append({**common, "taskset_name": task_set.name, "actual_utilization": task_set.utilization, "hyperperiod": hyperperiod, "number_of_tasks": len(tasks), "number_of_jobs_in_hyperperiod": sum(hyperperiod // t.T for t in tasks), "dm_schedulable": dm_sched, "edf_schedulable": edf_sched, "dm_deadline_misses_sim": dm_misses, "edf_deadline_misses_sim": edf_misses, "dm_status": dm_status, "edf_status": edf_status, "simulation_status": simulation_status, "dm_max_wcrt": max(dm.values(), default=0), "edf_max_wcrt": max(edf.values(), default=0) if edf else "", "dm_max_sim_response_time": dm_max_sim_response_time, "edf_max_sim_response_time": edf_max_sim_response_time, "dm_preemptions_sim": dm_preemptions, "edf_preemptions_sim": edf_preemptions, "status": "ok", "simulation_horizon_used": effective_horizon, "warnings": ";".join(warnings)})
         except Exception as exc:  # noqa: BLE001
-            summary_rows.append({**common, "actual_utilization": "", "hyperperiod": "", "number_of_tasks": "", "dm_schedulable": "", "edf_schedulable": "", "dm_deadline_misses_sim": "", "edf_deadline_misses_sim": "", "dm_status": "failed_validation", "edf_status": "failed_validation", "simulation_status": "failed_validation", "status": "failed_validation", "simulation_horizon_used": "", "error_message": str(exc)})
+            summary_rows.append({**common, "actual_utilization": "", "hyperperiod": "", "number_of_tasks": "", "number_of_jobs_in_hyperperiod": "", "dm_schedulable": "", "edf_schedulable": "", "dm_deadline_misses_sim": "", "edf_deadline_misses_sim": "", "dm_status": "failed_validation", "edf_status": "failed_validation", "simulation_status": "failed_validation", "dm_max_wcrt": "", "edf_max_wcrt": "", "dm_max_sim_response_time": "", "edf_max_sim_response_time": "", "dm_preemptions_sim": "", "edf_preemptions_sim": "", "status": "failed_validation", "simulation_horizon_used": "", "error_message": str(exc)})
     _write_csv(output_root / "taskset_summary.csv", summary_rows)
     _write_csv(output_root / "task_details.csv", [])
 
@@ -100,6 +108,15 @@ def diagnose_results(summary_path: str | Path, details_path: str | Path, output_
     util = Counter(r.get("target_utilization", "") for r in rows)
     errors = Counter(r.get("error_message", "") for r in rows if r.get("status") == "failed_validation")
     combos = Counter((r.get("dm_schedulable"), r.get("edf_schedulable")) for r in rows)
+    warning_counts = Counter()
+    for r in rows:
+        for w in (r.get("warnings", "") or "").split(";"):
+            if w:
+                warning_counts[w] += 1
+    dm_sched_count = sum(r.get("dm_schedulable") == "True" for r in rows)
+    edf_sched_count = sum(r.get("edf_schedulable") == "True" for r in rows)
+    sim_miss_despite_analytic = sum((r.get("dm_schedulable") == "True" and int(r.get("dm_deadline_misses_sim") or 0) > 0) or (r.get("edf_schedulable") == "True" and int(r.get("edf_deadline_misses_sim") or 0) > 0) for r in rows)
+    missing_target = sum(r.get("target_utilization") in ("", "None") for r in rows)
     suspicious = [r for r in rows if (r.get("dm_schedulable") == "True" and r.get("edf_schedulable") == "False") or (r.get("dm_schedulable") == "True" and int(r.get("dm_deadline_misses_sim") or 0) > 0) or (r.get("target_utilization") in ("", "None")) or (r.get("status") == "failed_validation")][:20]
 
     out = ["# Diagnostics Report", f"- total task sets: {len(rows)}", "## Count by status"]
@@ -107,7 +124,8 @@ def diagnose_results(summary_path: str | Path, details_path: str | Path, output_
     out += ["## Count by distribution"] + [f"- {k}: {v}" for k, v in dist.items()]
     out += ["## Count by target_utilization"] + [f"- {k}: {v}" for k, v in util.items()]
     out += ["## Validation failures by error"] + [f"- {k}: {v}" for k, v in errors.items()]
-    out += ["## DM/EDF combination counts", f"- DM true EDF false: {combos.get(('True','False'),0)}", f"- EDF true DM false: {combos.get(('False','True'),0)}", f"- both true: {combos.get(('True','True'),0)}", f"- both false: {combos.get(('False','False'),0)}"]
+    out += ["## Count by warning"] + [f"- {k}: {v}" for k, v in warning_counts.items()]
+    out += ["## Schedulability summary", f"- DM schedulable count: {dm_sched_count}", f"- EDF schedulable count: {edf_sched_count}", f"- DM true EDF false: {combos.get(('True','False'),0)}", f"- EDF true DM false: {combos.get(('False','True'),0)}", f"- simulation misses despite analytical schedulability: {sim_miss_despite_analytic}", f"- missing target_utilization rows: {missing_target}"]
     out += ["## Top 20 suspicious rows", "|source_file|status|dm|edf|dm_miss|edf_miss|target_utilization|error|", "|---|---|---|---|---|---|---|---|"]
     for r in suspicious:
         out.append(f"|{r.get('source_file','')}|{r.get('status','')}|{r.get('dm_schedulable','')}|{r.get('edf_schedulable','')}|{r.get('dm_deadline_misses_sim','')}|{r.get('edf_deadline_misses_sim','')}|{r.get('target_utilization','')}|{r.get('error_message','')}|")
