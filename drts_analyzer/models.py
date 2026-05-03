@@ -12,8 +12,10 @@ class Task:
     T: int
 
     def __post_init__(self) -> None:
-        if min(self.C, self.BCET, self.D, self.T) <= 0:
-            raise ValueError("Task parameters must be positive integers")
+        if self.C <= 0 or self.D <= 0 or self.T <= 0:
+            raise ValueError("C, D, and T must be > 0")
+        if self.BCET < 0:
+            raise ValueError("BCET must be >= 0")
         if self.BCET > self.C:
             raise ValueError("BCET must be <= C")
         if not (self.C <= self.D <= self.T):

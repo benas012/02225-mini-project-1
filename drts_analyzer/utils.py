@@ -32,26 +32,36 @@ def parse_taskset_metadata(csv_file: str | Path, input_root: str | Path) -> dict
     root = Path(input_root)
     relative = csv_path.relative_to(root)
     parts = relative.parts
-
-    distribution = parts[0] if len(parts) > 0 else ""
-    core_count = parts[1] if len(parts) > 1 else ""
-    task_count = parts[2] if len(parts) > 2 else ""
-    jitter_group = parts[3] if len(parts) > 3 else ""
-    util_group = parts[4] if len(parts) > 4 else ""
-
     target_utilization = None
-    match = re.match(r"^(\d+(?:\.\d+)?)-util$", util_group)
-    if match:
-        target_utilization = float(match.group(1))
+    for part in parts:
+        match = re.match(r"^([0-9]+(?:\.[0-9]+)?)-util$", part)
+        if match:
+            target_utilization = float(match.group(1))
+            break
 
     return {
-        "distribution": distribution,
-        "core_count": core_count,
-        "task_count": task_count,
-        "jitter_group": jitter_group,
+        "distribution": parts[0] if len(parts) > 0 else "",
+        "core_count": parts[1] if len(parts) > 1 else "",
+        "task_count": parts[2] if len(parts) > 2 else "",
+        "jitter_group": parts[3] if len(parts) > 3 else "",
         "target_utilization": target_utilization,
         "csv_file_name": csv_path.name,
     }
+
+
+def _parse_numeric(row: dict[str, str], column: str, row_num: int, allow_float: bool = False) -> int | float:
+    raw = row[column]
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Row {row_num}: non-numeric value for {column}: {raw}") from exc
+    if not math.isfinite(value):
+        raise ValueError(f"Row {row_num}: non-finite value for {column}: {raw}")
+    if allow_float:
+        return value
+    if value.is_integer():
+        return int(value)
+    raise ValueError(f"non-integer time value not supported: column {column} row {row_num} value {raw}")
 
 
 def load_csv_task_set(csv_file: str | Path, input_root: str | Path) -> TaskSet:
@@ -65,15 +75,12 @@ def load_csv_task_set(csv_file: str | Path, input_root: str | Path) -> TaskSet:
 
         tasks: list[Task] = []
         for row_num, row in enumerate(reader, start=2):
-            try:
-                jitter = int(row["Jitter"])
-                bcet = int(row["BCET"])
-                wcet = int(row["WCET"])
-                period = int(row["Period"])
-                deadline = int(row["Deadline"])
-                pe = int(row["PE"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"Row {row_num}: non-integer field value") from exc
+            jitter = _parse_numeric(row, "Jitter", row_num)
+            bcet = _parse_numeric(row, "BCET", row_num)
+            wcet = _parse_numeric(row, "WCET", row_num)
+            period = _parse_numeric(row, "Period", row_num)
+            deadline = _parse_numeric(row, "Deadline", row_num)
+            pe = _parse_numeric(row, "PE", row_num)
 
             if wcet <= 0:
                 raise ValueError(f"Row {row_num}: WCET must be > 0")
@@ -85,8 +92,10 @@ def load_csv_task_set(csv_file: str | Path, input_root: str | Path) -> TaskSet:
                 raise ValueError(f"Row {row_num}: BCET must be >= 0")
             if bcet > wcet:
                 raise ValueError(f"Row {row_num}: BCET must be <= WCET")
-            if not (wcet <= deadline <= period):
-                raise ValueError(f"Row {row_num}: expected WCET <= Deadline <= Period")
+            if wcet > deadline:
+                raise ValueError(f"Row {row_num}: WCET must be <= Deadline")
+            if deadline > period:
+                raise ValueError(f"Row {row_num}: Deadline must be <= Period")
             if jitter != 0:
                 raise ValueError(f"Row {row_num}: Jitter must be 0 for synchronous model")
             if pe != 0:
