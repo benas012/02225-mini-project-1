@@ -39,6 +39,19 @@ def test_util_and_distribution_filters(tmp_path: Path):
     assert "c.csv" not in text
 
 
+def test_without_distribution_filter_includes_all_distributions(tmp_path: Path):
+    _mk(tmp_path, "unifast-utilDist", "0.60-util", "u")
+    _mk(tmp_path, "automotive-utilDist", "0.60-util", "a")
+    _mk(tmp_path, "uniform-discrete-perDist", "0.60-util", "d")
+    out = tmp_path / "out"
+    analyze_csv_folder(tmp_path, out, runs=0, seed=1, max_hyperperiod=1000)
+    text = (out / "taskset_summary.csv").read_text()
+    assert "unifast-utilDist" in text
+    assert "automotive-utilDist" in text
+    assert "uniform-discrete-perDist" in text
+    assert "d.csv" in text
+
+
 def test_skip_edf_but_dm_runs_and_horizon_bound(tmp_path: Path):
     _mk(tmp_path, "unifast-utilDist", "0.60-util", "big", period2=99991)
     out = tmp_path / "out"

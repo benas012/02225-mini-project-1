@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "find-suspicious":
         rows = list(csv.DictReader(Path(args.summary).open()))
-        filt = [r["source_file"] for r in rows if (r.get("dm_schedulable") == "True" and r.get("edf_schedulable") == "False") or (r.get("dm_schedulable") == "True" and int(r.get("dm_deadline_misses_sim") or 0) > 0) or (r.get("edf_schedulable") == "True" and int(r.get("edf_deadline_misses_sim") or 0) > 0)]
+        filt = [r["source_file"] for r in rows if (r.get("dm_schedulable") == "True" and r.get("edf_schedulable") == "False") or (r.get("dm_schedulable") == "True" and int(r.get("dm_deadline_misses_sim") or 0) > 0) or (r.get("edf_schedulable") == "True" and int(r.get("edf_deadline_misses_sim") or 0) > 0) or (r.get("target_utilization") in ("", "None")) or (r.get("status") != "ok")]
         for p in filt[: args.limit]: print(p)
         return 0
     if args.command == "analyze":
