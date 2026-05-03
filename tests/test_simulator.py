@@ -28,3 +28,14 @@ def test_deadline_equality_not_miss_and_horizon_no_false_miss():
     assert r.deadline_misses == 0
     r2 = run_simulation(tasks, "EDF", 1, random.Random(1), execution_policy="wcet", drain_after_horizon=True)
     assert r2.deadline_misses == 0
+
+
+def test_non_draining_horizon_stops_active_job_at_boundary():
+    tasks = (Task(id="a", C=5, BCET=5, D=10, T=20),)
+    non_draining = run_simulation(tasks, "EDF", 3, random.Random(1), execution_policy="wcet", drain_after_horizon=False)
+    draining = run_simulation(tasks, "EDF", 3, random.Random(1), execution_policy="wcet", drain_after_horizon=True)
+
+    assert non_draining.max_response["a"] == 0.0
+    assert non_draining.incomplete_jobs_ignored == 1
+    assert draining.max_response["a"] == 5
+    assert draining.incomplete_jobs_ignored == 0
