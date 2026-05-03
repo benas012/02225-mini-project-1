@@ -207,3 +207,10 @@ Interpretation notes:
 - If analytical schedulability is true but simulation reports misses, verify deadline comparison (`finish_time > absolute_deadline`), execution-time sampling bounds, and bounded-horizon handling for unfinished jobs.
 - `target_utilization` is parsed from folder components such as `0.60-util`.
 - CSV numeric fields may appear as float strings (for example `10000.0`) while still representing integer task parameters.
+
+## Troubleshooting consistency issues
+
+- If EDF is worse than DM, inspect EDF analytical scheduling with `python -m drts_analyzer debug-taskset --input path/to/taskset.csv --trace-edf`.
+- If simulation misses deadlines while analytical analysis says schedulable, check execution-time sampling bounds, deadline comparison (`finish_time > absolute_deadline`), and horizon handling.
+- Analytical EDF must continue after hyperperiod `H` until all jobs released before `H` complete.
+- Deadline misses are only decided at job completion with `finish_time > absolute_deadline` (not `>=`).
