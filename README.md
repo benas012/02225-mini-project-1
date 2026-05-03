@@ -200,3 +200,10 @@ Interpretation notes:
 - Simulation outputs are bounded empirical observations, not schedulability proofs.
 - If `--simulation-horizon` is omitted, simulation uses `min(hyperperiod, max_hyperperiod)`.
 - Use `--runs 0` to disable simulation.
+
+## Sanity checks for results
+
+- If EDF appears much worse than DM on this single-core preemptive constrained-deadline model, treat it as an implementation bug and inspect EDF schedule construction.
+- If analytical schedulability is true but simulation reports misses, verify deadline comparison (`finish_time > absolute_deadline`), execution-time sampling bounds, and bounded-horizon handling for unfinished jobs.
+- `target_utilization` is parsed from folder components such as `0.60-util`.
+- CSV numeric fields may appear as float strings (for example `10000.0`) while still representing integer task parameters.

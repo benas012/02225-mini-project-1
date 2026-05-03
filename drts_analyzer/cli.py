@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 
-from .analyzer import analyze_csv_folder, analyze_task_set
+from .analyzer import analyze_csv_folder, analyze_task_set, diagnose_results
 from .utils import load_task_sets
 
 
@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_csv.add_argument("--distributions", nargs="*", default=None, help="Optional top-level distributions to include")
     analyze_csv.add_argument("--simulation-horizon", type=int, default=None, help="Bounded simulation horizon")
     analyze_csv.add_argument("--verbose", action="store_true", help="Print progress for each CSV task set")
+    diagnose = subparsers.add_parser("diagnose-results", help="Diagnose generated CSV results")
+    diagnose.add_argument("--summary", required=True)
+    diagnose.add_argument("--details", required=True)
+    diagnose.add_argument("--output", required=True)
     return parser
 
 
@@ -45,6 +49,10 @@ def main(argv: list[str] | None = None) -> int:
             rows = analyze_task_set(task_set, runs=args.runs, seed=args.seed, horizon=args.horizon)
             output["task_sets"].append({"name": task_set.name, "results": rows})
         print(json.dumps(output, indent=2))
+        return 0
+
+    if args.command == "diagnose-results":
+        diagnose_results(args.summary, args.details, args.output)
         return 0
 
     if args.command == "analyze-csv-folder":
