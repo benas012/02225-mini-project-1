@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import random
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def analyze_task_set(task_set: TaskSet, runs: int, seed: int, horizon: int | Non
     return rows
 
 
-def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: int, seed: int, max_hyperperiod: int) -> None:
+def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: int, seed: int, max_hyperperiod: int, verbose: bool = False) -> None:
     input_root = Path(input_path)
     output_root = Path(output_path)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -70,9 +71,13 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
     summary_rows: list[dict[str, object]] = []
     detail_rows: list[dict[str, object]] = []
 
-    for csv_file in sorted(input_root.rglob("*.csv")):
+    csv_files = sorted(input_root.rglob("*.csv"))
+
+    for index, csv_file in enumerate(csv_files, start=1):
         if csv_file.name == ".DS_Store":
             continue
+        if verbose:
+            print(f"[analyze-csv-folder] Running task set {index}/{len(csv_files)}: {csv_file}", file=sys.stderr)
         metadata = parse_taskset_metadata(csv_file, input_root)
         common = {
             "taskset_name": "",
