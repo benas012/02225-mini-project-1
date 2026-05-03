@@ -13,7 +13,6 @@ class Job:
     release: int
     absolute_deadline: int
     remaining: int
-    started: bool = False
 
 
 @dataclass
@@ -32,47 +31,48 @@ def _pick_job(jobs: list[Job], algorithm: str) -> Job:
     raise ValueError(f"Unsupported algorithm: {algorithm}")
 
 
-def run_simulation(
-    tasks: tuple[Task, ...],
-    algorithm: str,
-    horizon: int,
-    rng: random.Random,
-) -> SimulationStats:
+def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: random.Random) -> SimulationStats:
     ready: list[Job] = []
     max_response = {task.id: 0 for task in tasks}
     deadline_misses = 0
     preemptions = 0
+    current_time = 0
+    next_release = {task.id: 0 for task in tasks}
     running_job: Job | None = None
 
-    for tick in range(horizon):
+    while current_time < horizon:
         for task in tasks:
-            if tick % task.T == 0:
+            if next_release[task.id] <= current_time:
                 execution_time = rng.randint(task.BCET, task.C)
-                ready.append(
-                    Job(
-                        task=task,
-                        release=tick,
-                        absolute_deadline=tick + task.D,
-                        remaining=execution_time,
-                    )
-                )
+                ready.append(Job(task=task, release=next_release[task.id], absolute_deadline=next_release[task.id] + task.D, remaining=execution_time))
+                next_release[task.id] += task.T
 
-        late_jobs = [job for job in ready if tick >= job.absolute_deadline and job.remaining > 0]
-        deadline_misses += len(late_jobs)
+        for job in ready:
+            if job.remaining > 0 and current_time >= job.absolute_deadline:
+                deadline_misses += 1
 
-        if ready:
-            next_job = _pick_job([job for job in ready if job.remaining > 0], algorithm)
-            if running_job is not None and running_job is not next_job and running_job.remaining > 0:
-                preemptions += 1
-            running_job = next_job
-            running_job.started = True
-            running_job.remaining -= 1
-            if running_job.remaining == 0:
-                response_time = tick + 1 - running_job.release
-                max_response[running_job.task.id] = max(max_response[running_job.task.id], response_time)
-                ready.remove(running_job)
-                running_job = None
+        active = [job for job in ready if job.remaining > 0]
+        if not active:
+            nearest_release = min(next_release.values())
+            current_time = max(current_time + 1, nearest_release)
+            continue
 
-        ready = [job for job in ready if job.remaining > 0]
+        next_job = _pick_job(active, algorithm)
+        if running_job is not None and running_job is not next_job and running_job.remaining > 0:
+            preemptions += 1
+        running_job = next_job
+
+        completion_time = current_time + running_job.remaining
+        nearest_release = min(next_release.values())
+        next_event_time = min(completion_time, nearest_release, horizon)
+        executed = max(0, next_event_time - current_time)
+        running_job.remaining -= executed
+        current_time = next_event_time
+
+        if running_job.remaining == 0:
+            response_time = current_time - running_job.release
+            max_response[running_job.task.id] = max(max_response[running_job.task.id], response_time)
+            ready.remove(running_job)
+            running_job = None
 
     return SimulationStats(max_response=max_response, deadline_misses=deadline_misses, preemptions=preemptions)
