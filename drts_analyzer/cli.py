@@ -21,9 +21,13 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_csv = subparsers.add_parser("analyze-csv-folder", help="Analyze all CSV task sets under a folder")
     analyze_csv.add_argument("--input", required=True, help="Input folder containing CSV task sets")
     analyze_csv.add_argument("--output", required=True, help="Output folder for result CSV files")
-    analyze_csv.add_argument("--runs", type=int, default=100, help="Number of stochastic simulation runs")
+    analyze_csv.add_argument("--runs", type=int, default=100, help="Number of stochastic simulation runs (0 disables simulation)")
     analyze_csv.add_argument("--seed", type=int, default=42, help="Random seed")
     analyze_csv.add_argument("--max-hyperperiod", type=int, default=10_000_000, help="Maximum hyperperiod allowed for analysis")
+    analyze_csv.add_argument("--samples-per-util", type=int, default=None, help="Analyze at most N CSV files per utilization folder")
+    analyze_csv.add_argument("--util-levels", nargs="*", default=None, help="Optional utilization folders/levels to include, e.g. 0.30 0.50")
+    analyze_csv.add_argument("--distributions", nargs="*", default=None, help="Optional top-level distributions to include")
+    analyze_csv.add_argument("--simulation-horizon", type=int, default=None, help="Bounded simulation horizon")
     analyze_csv.add_argument("--verbose", action="store_true", help="Print progress for each CSV task set")
     return parser
 
@@ -51,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             max_hyperperiod=args.max_hyperperiod,
             verbose=args.verbose,
+            samples_per_util=args.samples_per_util,
+            util_levels=args.util_levels,
+            distributions=args.distributions,
+            simulation_horizon=args.simulation_horizon,
         )
         return 0
 

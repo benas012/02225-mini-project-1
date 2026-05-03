@@ -172,3 +172,31 @@ Results will be written to:
 - `0-jitter`: no release jitter
 - `0.60-util`: intended utilization group
 - final CSV index such as `_0`, `_1`, `_2`: different randomly generated instances in the same group
+
+## Performance and sampling
+
+The provided task-set folders may contain many CSV files, and some task sets can produce very large hyperperiods (`H = lcm(periods)`). Since EDF analytical WCRT in this project is tied to hyperperiod-based analysis, this can become computationally expensive.
+
+To keep analysis practical while preserving an academically valid methodology, the tool supports representative sampling, utilization/distribution filtering, and hyperperiod limits.
+
+Recommended command:
+
+```bash
+python -m drts_analyzer analyze-csv-folder \
+  --input tasksets \
+  --output results \
+  --runs 20 \
+  --seed 42 \
+  --samples-per-util 5 \
+  --util-levels 0.30 0.50 0.70 0.90 \
+  --max-hyperperiod 10000000 \
+  --simulation-horizon 1000000
+```
+
+Interpretation notes:
+
+- DM analytical results are still valid even when EDF analytical analysis is skipped.
+- Skipped EDF analytical results indicate the exact hyperperiod method was too expensive for that task set.
+- Simulation outputs are bounded empirical observations, not schedulability proofs.
+- If `--simulation-horizon` is omitted, simulation uses `min(hyperperiod, max_hyperperiod)`.
+- Use `--runs 0` to disable simulation.
