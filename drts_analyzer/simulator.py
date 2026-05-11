@@ -21,6 +21,7 @@ class Job:
 class SimulationStats:
     max_response: dict[str, float]
     deadline_misses: int
+    deadline_misses_by_task: dict[str, int]
     preemptions: int
     first_miss: dict[str, object] | None
     incomplete_jobs_ignored: int
@@ -43,6 +44,7 @@ def _sample_execution(task: Task, rng: random.Random, policy: str) -> int:
 def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: random.Random, execution_policy: str = "random", drain_after_horizon: bool = True) -> SimulationStats:
     ready: list[Job] = []
     max_response = {task.id: 0.0 for task in tasks}
+    deadline_misses_by_task = {task.id: 0 for task in tasks}
     deadline_misses = 0
     preemptions = 0
     current_time = 0
@@ -87,6 +89,7 @@ def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: r
             finish_time = current_time
             if finish_time > running_job.absolute_deadline:
                 deadline_misses += 1
+                deadline_misses_by_task[running_job.task.id] += 1
                 if first_miss is None:
                     first_miss = {"scheduler": algorithm, "task_id": running_job.task.id, "job_index": running_job.job_index, "release_time": running_job.release, "absolute_deadline": running_job.absolute_deadline, "sampled_execution_time": running_job.execution_time, "finish_time": finish_time, "response_time": finish_time - running_job.release}
             max_response[running_job.task.id] = max(max_response[running_job.task.id], finish_time - running_job.release)
@@ -100,4 +103,4 @@ def run_simulation(tasks: tuple[Task, ...], algorithm: str, horizon: int, rng: r
             break
 
     incomplete = len([j for j in ready if j.remaining > 0])
-    return SimulationStats(max_response=max_response, deadline_misses=deadline_misses, preemptions=preemptions, first_miss=first_miss, incomplete_jobs_ignored=incomplete)
+    return SimulationStats(max_response=max_response, deadline_misses=deadline_misses, deadline_misses_by_task=deadline_misses_by_task, preemptions=preemptions, first_miss=first_miss, incomplete_jobs_ignored=incomplete)

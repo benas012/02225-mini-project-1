@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import math
 import re
 from pathlib import Path
@@ -18,15 +17,6 @@ def lcm(values: list[int]) -> int:
     return result
 
 
-def load_task_sets(path: str | Path) -> list[TaskSet]:
-    data = json.loads(Path(path).read_text())
-    task_sets: list[TaskSet] = []
-    for raw_set in data["task_sets"]:
-        tasks = tuple(Task(**task) for task in raw_set["tasks"])
-        task_sets.append(TaskSet(name=raw_set["name"], tasks=tasks))
-    return task_sets
-
-
 def parse_taskset_metadata(csv_file: str | Path, input_root: str | Path) -> dict[str, object]:
     csv_path = Path(csv_file)
     root = Path(input_root)
@@ -38,12 +28,19 @@ def parse_taskset_metadata(csv_file: str | Path, input_root: str | Path) -> dict
         if match:
             target_utilization = float(match.group(1))
             break
+    core_count = next((p for p in parts if p.endswith("-core")), "")
+    task_count = next((p for p in parts if p.endswith("-task")), "")
+    jitter_group = next((p for p in parts if p.endswith("-jitter")), "")
+    period_distribution = ""
+    if len(parts) > 1 and not parts[1].endswith(("-core", "-task", "-jitter", "-util")):
+        period_distribution = parts[1]
 
     return {
         "distribution": parts[0] if len(parts) > 0 else "",
-        "core_count": parts[1] if len(parts) > 1 else "",
-        "task_count": parts[2] if len(parts) > 2 else "",
-        "jitter_group": parts[3] if len(parts) > 3 else "",
+        "period_distribution": period_distribution,
+        "core_count": core_count,
+        "task_count": task_count,
+        "jitter_group": jitter_group,
         "target_utilization": target_utilization,
         "csv_file_name": csv_path.name,
     }

@@ -13,13 +13,26 @@ def load_data(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
 
     df["target_utilization"] = pd.to_numeric(df["target_utilization"], errors="coerce")
-    df["dm_schedulable"] = df["dm_schedulable"].astype(bool)
-    df["edf_schedulable"] = df["edf_schedulable"].astype(bool)
+    df["dm_schedulable"] = df["dm_schedulable"].map(_parse_bool).fillna(False)
+    df["edf_schedulable"] = df["edf_schedulable"].map(_parse_bool).fillna(False)
 
     df = df[df["status"].eq("ok")]
     df = df.dropna(subset=["target_utilization"])
 
     return df
+
+
+def _parse_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if pd.isna(value):
+        return None
+    text = str(value).strip().lower()
+    if text == "true":
+        return True
+    if text == "false":
+        return False
+    return None
 
 
 def plot_schedulability_by_util(df: pd.DataFrame) -> None:

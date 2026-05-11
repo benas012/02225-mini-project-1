@@ -8,13 +8,70 @@ from pathlib import Path
 
 from .dm_analysis import dm_wcrts
 from .edf_analysis import edf_analyze
-from .models import TaskSet
+from .models import Task, TaskSet
 from .simulator import run_simulation
 from .utils import lcm, load_csv_task_set, parse_taskset_metadata
 
 
 def analyze_task_set(task_set: TaskSet, runs: int, seed: int, horizon: int | None = None) -> list[dict[str, object]]:
-    return []
+    tasks = task_set.tasks
+    hyperperiod = lcm([task.T for task in tasks])
+    effective_horizon = horizon if horizon is not None else hyperperiod
+    dm = dm_wcrts(tasks)
+    edf_res = edf_analyze(tasks)
+    edf = edf_res["wcrt"]
+    sim = _run_simulations(tasks, runs, seed, effective_horizon)
+
+    rows: list[dict[str, object]] = []
+    for task in tasks:
+        rows.append(
+            {
+                "task_id": task.id,
+                "C": task.C,
+                "BCET": task.BCET,
+                "D": task.D,
+                "T": task.T,
+                "U_i": task.utilization,
+                "DM_WCRT": dm[task.id],
+                "DM_schedulable": dm[task.id] <= task.D,
+                "EDF_WCRT": edf[task.id],
+                "EDF_schedulable": edf[task.id] <= task.D,
+                "DM_max_sim": sim["DM"]["max_response"][task.id],
+                "EDF_max_sim": sim["EDF"]["max_response"][task.id],
+                "DM_analytical_minus_sim_gap": dm[task.id] - sim["DM"]["max_response"][task.id],
+                "EDF_analytical_minus_sim_gap": edf[task.id] - sim["EDF"]["max_response"][task.id],
+                "DM_deadline_misses": sim["DM"]["deadline_misses_by_task"][task.id],
+                "EDF_deadline_misses": sim["EDF"]["deadline_misses_by_task"][task.id],
+                "DM_preemptions": sim["DM"]["preemptions"],
+                "EDF_preemptions": sim["EDF"]["preemptions"],
+                "simulation_horizon": effective_horizon,
+                "simulation_runs": runs,
+            }
+        )
+    return rows
+
+
+def _run_simulations(tasks: tuple[Task, ...], runs: int, seed: int, horizon: int) -> dict[str, dict[str, object]]:
+    result = {
+        algorithm: {
+            "max_response": {task.id: 0.0 for task in tasks},
+            "deadline_misses": 0,
+            "deadline_misses_by_task": {task.id: 0 for task in tasks},
+            "preemptions": 0,
+            "incomplete_jobs_ignored": 0,
+        }
+        for algorithm in ("DM", "EDF")
+    }
+    for run in range(runs):
+        for algorithm in ("DM", "EDF"):
+            stats = run_simulation(tasks, algorithm, horizon, random.Random(seed + run), execution_policy="random")
+            result[algorithm]["deadline_misses"] += stats.deadline_misses
+            result[algorithm]["preemptions"] += stats.preemptions
+            result[algorithm]["incomplete_jobs_ignored"] += stats.incomplete_jobs_ignored
+            for task in tasks:
+                result[algorithm]["max_response"][task.id] = max(result[algorithm]["max_response"][task.id], stats.max_response[task.id])
+                result[algorithm]["deadline_misses_by_task"][task.id] += stats.deadline_misses_by_task[task.id]
+    return result
 
 
 def _discover_csv_files(input_root: Path, distributions: set[str] | None, util_levels: set[str] | None) -> dict[tuple[str, str], list[Path]]:
@@ -44,6 +101,7 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
 
     selected = [p for _, files in sorted(grouped.items()) for p in (files[:samples_per_util] if samples_per_util else files)]
     summary_rows: list[dict[str, object]] = []
+    detail_rows: list[dict[str, object]] = []
     for index, csv_file in enumerate(selected, start=1):
         print(f"[{index}/{len(selected)}] Processing {csv_file.relative_to(input_root)}", file=sys.stderr)
         metadata = parse_taskset_metadata(csv_file, input_root)
@@ -65,24 +123,15 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
                 edf_status = "skipped_hyperperiod_too_large"
                 edf_sched = ""
             effective_horizon = simulation_horizon if simulation_horizon is not None else min(hyperperiod, max_hyperperiod)
-            dm_misses = edf_misses = 0
-            dm_max_sim_response_time = 0.0
-            edf_max_sim_response_time = 0.0
-            dm_preemptions = 0
-            edf_preemptions = 0
             simulation_status = "simulation_disabled" if runs == 0 else "ok"
-            if runs > 0:
-                incomplete=False
-                for run in range(runs):
-                    dm_stats = run_simulation(tasks, "DM", effective_horizon, random.Random(seed + run), execution_policy="random")
-                    edf_stats = run_simulation(tasks, "EDF", effective_horizon, random.Random(seed + run), execution_policy="random")
-                    dm_misses += dm_stats.deadline_misses
-                    edf_misses += edf_stats.deadline_misses
-                    dm_max_sim_response_time = max(dm_max_sim_response_time, max(dm_stats.max_response.values(), default=0.0))
-                    edf_max_sim_response_time = max(edf_max_sim_response_time, max(edf_stats.max_response.values(), default=0.0))
-                    dm_preemptions += dm_stats.preemptions
-                    edf_preemptions += edf_stats.preemptions
-                    incomplete = incomplete or dm_stats.incomplete_jobs_ignored > 0 or edf_stats.incomplete_jobs_ignored > 0
+            sim = _run_simulations(tasks, runs, seed, effective_horizon)
+            dm_misses = sim["DM"]["deadline_misses"]
+            edf_misses = sim["EDF"]["deadline_misses"]
+            dm_max_sim_response_time = max(sim["DM"]["max_response"].values(), default=0.0)
+            edf_max_sim_response_time = max(sim["EDF"]["max_response"].values(), default=0.0)
+            dm_preemptions = sim["DM"]["preemptions"]
+            edf_preemptions = sim["EDF"]["preemptions"]
+            incomplete = sim["DM"]["incomplete_jobs_ignored"] > 0 or sim["EDF"]["incomplete_jobs_ignored"] > 0
             warnings = []
             if dm_sched and edf_sched is False:
                 warnings.append("edf_worse_than_dm_check_failed")
@@ -95,10 +144,39 @@ def analyze_csv_folder(input_path: str | Path, output_path: str | Path, runs: in
             if runs>0 and incomplete:
                 warnings.append("simulation_incomplete_jobs_ignored")
             summary_rows.append({**common, "taskset_name": task_set.name, "actual_utilization": task_set.utilization, "hyperperiod": hyperperiod, "number_of_tasks": len(tasks), "number_of_jobs_in_hyperperiod": sum(hyperperiod // t.T for t in tasks), "dm_schedulable": dm_sched, "edf_schedulable": edf_sched, "dm_deadline_misses_sim": dm_misses, "edf_deadline_misses_sim": edf_misses, "dm_status": dm_status, "edf_status": edf_status, "simulation_status": simulation_status, "dm_max_wcrt": max(dm.values(), default=0), "edf_max_wcrt": max(edf.values(), default=0) if edf else "", "dm_max_sim_response_time": dm_max_sim_response_time, "edf_max_sim_response_time": edf_max_sim_response_time, "dm_preemptions_sim": dm_preemptions, "edf_preemptions_sim": edf_preemptions, "status": "ok", "simulation_horizon_used": effective_horizon, "warnings": ";".join(warnings)})
+            for task in tasks:
+                detail_rows.append(
+                    {
+                        **common,
+                        "taskset_name": task_set.name,
+                        "task_id": task.id,
+                        "C": task.C,
+                        "BCET": task.BCET,
+                        "D": task.D,
+                        "T": task.T,
+                        "U_i": task.utilization,
+                        "DM_WCRT": dm[task.id],
+                        "DM_schedulable": dm[task.id] <= task.D,
+                        "EDF_WCRT": edf.get(task.id, ""),
+                        "EDF_schedulable": (edf[task.id] <= task.D) if edf else "",
+                        "DM_max_sim": sim["DM"]["max_response"][task.id],
+                        "EDF_max_sim": sim["EDF"]["max_response"][task.id],
+                        "DM_analytical_minus_sim_gap": dm[task.id] - sim["DM"]["max_response"][task.id],
+                        "EDF_analytical_minus_sim_gap": (edf[task.id] - sim["EDF"]["max_response"][task.id]) if edf else "",
+                        "DM_deadline_misses": sim["DM"]["deadline_misses_by_task"][task.id],
+                        "EDF_deadline_misses": sim["EDF"]["deadline_misses_by_task"][task.id],
+                        "DM_preemptions": dm_preemptions,
+                        "EDF_preemptions": edf_preemptions,
+                        "simulation_horizon": effective_horizon,
+                        "simulation_runs": runs,
+                        "status": "ok",
+                        "warnings": ";".join(warnings),
+                    }
+                )
         except Exception as exc:  # noqa: BLE001
             summary_rows.append({**common, "actual_utilization": "", "hyperperiod": "", "number_of_tasks": "", "number_of_jobs_in_hyperperiod": "", "dm_schedulable": "", "edf_schedulable": "", "dm_deadline_misses_sim": "", "edf_deadline_misses_sim": "", "dm_status": "failed_validation", "edf_status": "failed_validation", "simulation_status": "failed_validation", "dm_max_wcrt": "", "edf_max_wcrt": "", "dm_max_sim_response_time": "", "edf_max_sim_response_time": "", "dm_preemptions_sim": "", "edf_preemptions_sim": "", "status": "failed_validation", "simulation_horizon_used": "", "error_message": str(exc)})
     _write_csv(output_root / "taskset_summary.csv", summary_rows)
-    _write_csv(output_root / "task_details.csv", [])
+    _write_csv(output_root / "task_details.csv", detail_rows)
 
 
 def diagnose_results(summary_path: str | Path, details_path: str | Path, output_path: str | Path) -> None:

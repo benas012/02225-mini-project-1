@@ -56,6 +56,18 @@ def test_parse_metadata_from_path(tmp_path: Path):
     assert metadata["core_count"] == "1-core"
 
 
+def test_parse_metadata_from_nested_generated_path(tmp_path: Path):
+    csv_file = tmp_path / "tasksets/automotive-utilDist/automotive-perDist/1-core/25-task/0-jitter/0.60-util/tasksets/automotive_0.csv"
+    _write_csv(csv_file, ["TaskID,Jitter,BCET,WCET,Period,Deadline,PE", "t1,0,1,1,5,5,0"])
+    metadata = parse_taskset_metadata(csv_file, tmp_path / "tasksets")
+    assert metadata["distribution"] == "automotive-utilDist"
+    assert metadata["period_distribution"] == "automotive-perDist"
+    assert metadata["core_count"] == "1-core"
+    assert metadata["task_count"] == "25-task"
+    assert metadata["jitter_group"] == "0-jitter"
+    assert metadata["target_utilization"] == 0.60
+
+
 def test_target_util_depth_independent(tmp_path: Path):
     csv_file = tmp_path / "x/y/z/1.00-util/f.csv"
     _write_csv(csv_file, ["TaskID,Jitter,BCET,WCET,Period,Deadline,PE", "t1,0,1,1,5,5,0"])

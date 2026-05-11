@@ -39,35 +39,31 @@ pip install -r requirements.txt
 Run from the repository root:
 
 ```bash
-python -m drts_analyzer analyze --input examples/tasksets.json --runs 100 --seed 42
+python -m drts_analyzer analyze-csv-folder --input tasksets --output results --runs 100 --seed 42
 ```
 
 Arguments:
 
-- `--input`: path to JSON task-set file
+- `--input`: path to the course-provided CSV task-set folder
+- `--output`: folder where result CSV files are written
 - `--runs`: number of stochastic simulation runs
 - `--seed`: random seed for reproducibility
-- `--horizon`: optional simulation horizon (time units). If omitted, defaults to one hyperperiod
+- `--max-hyperperiod`: maximum hyperperiod for exact EDF analytical analysis
+- `--simulation-horizon`: optional simulation horizon. If omitted, simulation uses `min(hyperperiod, max_hyperperiod)`
 
 ## 5) Input format
-Complete JSON example:
+The project uses the course-provided CSV task sets. Each CSV row describes one task with columns:
 
-```json
-{
-  "task_sets": [
-    {
-      "name": "example_1",
-      "tasks": [
-        { "id": "tau1", "C": 1, "BCET": 1, "D": 3, "T": 4 },
-        { "id": "tau2", "C": 1, "BCET": 1, "D": 4, "T": 5 }
-      ]
-    }
-  ]
-}
-```
+- `TaskID`: task identifier
+- `Jitter`: release jitter; must be `0` for this implementation
+- `BCET`: best-case execution time
+- `WCET`: worst-case execution time
+- `Period`: task period
+- `Deadline`: relative deadline
+- `PE`: processing element/core; must be `0` for this single-core project
 
 ## 6) Output interpretation
-Each result row includes:
+`results/taskset_summary.csv` contains one row per task set. `results/task_details.csv` contains one row per task. Each task-detail row includes:
 
 - `task_id`: task name
 - `C`: WCET
@@ -81,9 +77,10 @@ Each result row includes:
 - `EDF_schedulable`: `true` if `EDF_WCRT <= D`
 - `DM_max_sim`: maximum observed simulated response time under DM
 - `EDF_max_sim`: maximum observed simulated response time under EDF
-- `analytical_minus_sim_gap`: analytical WCRT minus maximum observed simulation response time
-- `deadline_misses`: number of missed deadlines in simulation
-- `preemptions`: number of preemptions during simulation
+- `DM_analytical_minus_sim_gap`: DM analytical WCRT minus maximum observed DM simulation response time
+- `EDF_analytical_minus_sim_gap`: EDF analytical WCRT minus maximum observed EDF simulation response time
+- `DM_deadline_misses` and `EDF_deadline_misses`: missed deadlines in simulation
+- `DM_preemptions` and `EDF_preemptions`: preemptions during simulation
 
 ## 7) How to interpret results
 - If `WCRT <= D`, that task is analytically schedulable.
@@ -95,7 +92,7 @@ Each result row includes:
 
 ## 8) Running tests
 ```bash
-pytest
+python -m pytest
 ```
 
 The tests verify:
@@ -118,11 +115,11 @@ drts_analyzer/
   edf_analysis.py
   simulator.py
   cli.py
-examples/
-  tasksets.json
 tests/
+  test_analyzer.py
   test_dm.py
   test_edf.py
+  test_csv_loader.py
   test_simulator.py
 README.md
 requirements.txt
@@ -144,23 +141,13 @@ The `tasksets/` folder is intentionally not committed to GitHub because it can b
 Run batch CSV analysis with:
 
 ```bash
-python -m drts_analyzer analyze-csv-folder --input tasksets --output results --runs 100 --seed 42
+python -m drts_analyzer analyze-csv-folder --input tasksets --output results --runs 100 --seed 42 --verbose
 ```
 
 Results will be written to:
 
 - `results/taskset_summary.csv`
 - `results/task_details.csv`
-
-### CSV columns
-
-- `TaskID`: task identifier
-- `Jitter`: release jitter; must be `0` for this implementation
-- `BCET`: best-case execution time
-- `WCET`: worst-case execution time
-- `Period`: task period
-- `Deadline`: relative deadline
-- `PE`: processing element/core; must be `0` for this single-core project
 
 ### Folder naming convention
 
